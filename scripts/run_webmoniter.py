@@ -79,6 +79,30 @@ def worker() -> dict:
     original_prompt_text = captcha_client._prompt_text
     captcha_client._prompt_text = lambda element: normalize_challenge_prompt(original_prompt_text(element))
 
+    original_login_completed = client._login_completed
+    previous_login_state = None
+
+    def observed_login_completed(driver, cfg, solver):
+        nonlocal previous_login_state
+        logout_links = driver.find_elements("css selector", 'a[href="/auth/logout"], a[href$="/auth/logout"]')
+        alerts = [
+            element.text[:300]
+            for element in driver.find_elements("css selector", ".swal2-html-container, .swal-text, .alert-danger, .invalid-feedback, .swal2-title")
+            if element.is_displayed() and element.text.strip()
+        ]
+        fields = [
+            {"name": element.get_attribute("name"), "type": element.get_attribute("type"), "placeholder": element.get_attribute("placeholder")}
+            for element in driver.find_elements("css selector", "input")
+            if element.is_displayed()
+        ]
+        state = json.dumps({"path": urllib.parse.urlsplit(driver.current_url).path, "title": driver.title, "logout_links": len(logout_links), "visible_logout_links": sum(element.is_displayed() for element in logout_links), "alerts": alerts[:4], "fields": fields[:8]}, ensure_ascii=False)
+        if state != previous_login_state:
+            logging.info("登录状态诊断（仅页面提示与字段名，不含输入值）：%s", state)
+            previous_login_state = state
+        return original_login_completed(driver, cfg, solver)
+
+    client._login_completed = observed_login_completed
+
     solver_state = {"rounds": 0, "kind": "未出现图片挑战"}
     original_solver = client.CaptchaSolver
 
