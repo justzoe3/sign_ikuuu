@@ -48,6 +48,16 @@ def normalize_challenge_prompt(text: str) -> str:
     return re.sub(r"select\s*in\s*this\s*order", "依次点击", text, flags=re.IGNORECASE)
 
 
+def authenticated_page(state: dict) -> bool:
+    path = state.get("path", "")
+    return (
+        state.get("origin") == BASE_URL
+        and (path == "/user" or path.startswith("/user/"))
+        and state.get("logout_links", 0) > 0
+        and state.get("password_fields", 0) == 0
+    )
+
+
 def redact(text: str, accounts: list[dict[str, str]]) -> str:
     for account in accounts:
         for value in (account["email"], account["password"], urllib.parse.quote(account["email"]), urllib.parse.quote(account["password"])):
@@ -84,22 +94,37 @@ def worker() -> dict:
 
     def observed_login_completed(driver, cfg, solver):
         nonlocal previous_login_state
-        logout_links = driver.find_elements("css selector", 'a[href="/auth/logout"], a[href$="/auth/logout"]')
-        alerts = [
-            element.text[:300]
-            for element in driver.find_elements("css selector", ".swal2-html-container, .swal-text, .alert-danger, .invalid-feedback, .swal2-title")
-            if element.is_displayed() and element.text.strip()
-        ]
-        fields = [
-            {"name": element.get_attribute("name"), "type": element.get_attribute("type"), "placeholder": element.get_attribute("placeholder")}
-            for element in driver.find_elements("css selector", "input")
-            if element.is_displayed()
-        ]
-        state = json.dumps({"path": urllib.parse.urlsplit(driver.current_url).path, "title": driver.title, "logout_links": len(logout_links), "visible_logout_links": sum(element.is_displayed() for element in logout_links), "alerts": alerts[:4], "fields": fields[:8]}, ensure_ascii=False)
-        if state != previous_login_state:
-            logging.info("登录状态诊断（仅页面提示与字段名，不含输入值）：%s", state)
-            previous_login_state = state
-        return original_login_completed(driver, cfg, solver)
+        from selenium.common.exceptions import StaleElementReferenceException
+
+        try:
+            # A single DOM read avoids retaining element handles over a redirect.
+            state = driver.execute_script("""
+                const visible = e => !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
+                const links = [...document.querySelectorAll('a[href="/auth/logout"], a[href$="/auth/logout"]')];
+                const fields = [...document.querySelectorAll('input')].filter(visible);
+                const alerts = [...document.querySelectorAll('.swal2-html-container, .swal-text, .alert-danger, .invalid-feedback, .swal2-title')]
+                    .filter(visible).map(e => e.textContent.trim().slice(0,300)).filter(Boolean).slice(0,4);
+                return {origin: location.origin, path: location.pathname, title: document.title,
+                    logout_links: links.length, visible_logout_links: links.filter(visible).length,
+                    password_fields: fields.filter(e => e.type === 'password').length, alerts,
+                    fields: fields.slice(0,8).map(e => ({name:e.name,type:e.type,placeholder:e.placeholder}))};
+            """)
+            detail = json.dumps(state, ensure_ascii=False)
+            if detail != previous_login_state:
+                logging.info("登录状态诊断（仅页面提示与字段名，不含输入值）：%s", detail)
+                previous_login_state = detail
+            # The logout link may live in a closed account menu. The protected
+            # user page and authenticated Cookie are still required, followed
+            # by independent verification of the server's check-in response.
+            if authenticated_page(state):
+                return True
+        except Exception:
+            # Diagnostics are best effort and cannot interrupt authentication.
+            pass
+        try:
+            return original_login_completed(driver, cfg, solver)
+        except StaleElementReferenceException:
+            return False
 
     client._login_completed = observed_login_completed
 
