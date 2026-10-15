@@ -44,7 +44,8 @@ def business_success(ret: object, message: str) -> bool:
 def normalize_challenge_prompt(text: str) -> str:
     # GeeTest may serve English prompts even when Chrome requests zh-CN.
     # Keep the current remaining count, which falls after each grid click.
-    return re.sub(r"select\s*(\d+)\s*images?", r"选 \1 图片", text, flags=re.IGNORECASE)
+    text = re.sub(r"select\s*(\d+)\s*images?", r"选 \1 图片", text, flags=re.IGNORECASE)
+    return re.sub(r"select\s*in\s*this\s*order", "依次点击", text, flags=re.IGNORECASE)
 
 
 def redact(text: str, accounts: list[dict[str, str]]) -> str:
