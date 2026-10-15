@@ -87,6 +87,12 @@ def worker() -> dict:
             from selenium.common.exceptions import TimeoutException
             from selenium.webdriver.support.ui import WebDriverWait
 
+            # GeeTest removes its success element when the verified popup
+            # closes. Retain that observed success across subsequent polls;
+            # a newly visible challenge must still be solved normally.
+            if solver_state.get("verified") and visible_challenge(driver) is None:
+                return True
+
             # A visible blank panel appears before its prompt arrives. Do not
             # classify that loading frame as an unsupported CAPTCHA type.
             if options.get("wait_for_challenge"):
