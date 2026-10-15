@@ -44,7 +44,7 @@ def business_success(ret: object, message: str) -> bool:
 def normalize_challenge_prompt(text: str) -> str:
     # GeeTest may serve English prompts even when Chrome requests zh-CN.
     # Keep the current remaining count, which falls after each grid click.
-    return re.sub(r"\bselect\s*(\d+)\s*images?\s+with\b", r"选 \1 图片", text, flags=re.IGNORECASE)
+    return re.sub(r"select\s*(\d+)\s*images?", r"选 \1 图片", text, flags=re.IGNORECASE)
 
 
 def redact(text: str, accounts: list[dict[str, str]]) -> str:
@@ -100,6 +100,12 @@ def worker() -> dict:
             kind = visible_challenge(driver)
             if kind is not None:
                 solver_state["kind"] = kind.value
+                panels = [
+                    normalize_challenge_prompt(original_prompt_text(element))[:240]
+                    for element in driver.find_elements("css selector", ".geetest_box, .geetest_panel")
+                    if element.is_displayed()
+                ]
+                logging.info("验证码识别入口：类型=%s；公开容器提示=%s", kind.value, panels[:2])
             try:
                 return super().solve_if_present(driver, **options)
             except Exception:
