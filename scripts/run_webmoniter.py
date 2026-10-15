@@ -73,12 +73,35 @@ def worker() -> dict:
 
     class ObservedSolver(original_solver):
         def solve_if_present(self, driver, **options):
-            from src.tasks.ikuuu_captcha import visible_challenge
+            from src.tasks.ikuuu_captcha import CaptchaKind, visible_challenge, _verified
+            from selenium.common.exceptions import TimeoutException
+            from selenium.webdriver.support.ui import WebDriverWait
+
+            # A visible blank panel appears before its prompt arrives. Do not
+            # classify that loading frame as an unsupported CAPTCHA type.
+            if options.get("wait_for_challenge"):
+                try:
+                    WebDriverWait(driver, 12).until(
+                        lambda d: _verified(d)
+                        or visible_challenge(d) in (CaptchaKind.WORD, CaptchaKind.NINE)
+                    )
+                except TimeoutException:
+                    pass
             kind = visible_challenge(driver)
             if kind is not None:
                 solver_state["kind"] = kind.value
             try:
                 return super().solve_if_present(driver, **options)
+            except Exception:
+                prompts = []
+                for element in driver.find_elements("css selector", ".geetest_text_tips, .geetest_ques_tips"):
+                    if element.is_displayed():
+                        text = (element.get_attribute("textContent") or "").strip()
+                        if text:
+                            prompts.append(text[:160])
+                solver_state["prompt"] = prompts[:4]
+                logging.warning("验证码类型=%s；公开挑战提示=%s；已处理轮次=%s", solver_state["kind"], prompts[:4], self.rounds)
+                raise
             finally:
                 solver_state["rounds"] = self.rounds
 
