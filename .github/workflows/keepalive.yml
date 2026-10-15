@@ -2,21 +2,31 @@ name: Keep Repository Alive
 
 on:
   schedule:
-    - cron: '0 0 */20 * *'  # 每20天提交一次，可按需调整
-  workflow_dispatch:        # 允许手动运行
+    - cron: '19 4 1 * *' # 每月 1 日香港时间 12:19
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Update keep-alive timestamp
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 仅在仓库超过 20 天没有提交时保活
+        shell: bash
         run: |
-          date '+%Y-%m-%d %H:%M:%S' > .keepalive
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .keepalive
-          git commit -m "chore: keep repo active [skip ci]" || echo "No changes to commit"
+          latest_commit=$(git log -1 --format=%ct)
+          current_time=$(date -u +%s)
+          if (( current_time - latest_commit < 20 * 86400 )); then
+            echo '仓库近期已有提交，本次无需保活。'
+            exit 0
+          fi
+          mkdir -p .github
+          date -u '+%Y-%m-%dT%H:%M:%SZ' > .github/heartbeat.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/heartbeat.txt
+          git commit -m 'chore: keep scheduled check-in active [skip ci]'
           git push

@@ -1,0 +1,7 @@
+.upstream/
+.venv/
+__pycache__/
+config.json
+cookie*.txt
+*cookies*.json
+.checkin_log
