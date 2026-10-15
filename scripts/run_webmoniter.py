@@ -107,7 +107,24 @@ def worker() -> dict:
                 ]
                 logging.info("验证码识别入口：类型=%s；公开容器提示=%s", kind.value, panels[:2])
             try:
-                return super().solve_if_present(driver, **options)
+                result = super().solve_if_present(driver, **options)
+                if result and _verified(driver):
+                    solver_state["verified"] = True
+                    logging.info("验证码已通过，等待登录按钮不再被验证弹层遮挡。")
+
+                    def login_button_clear(browser):
+                        buttons = browser.find_elements("css selector", "button.login[type='submit']")
+                        if not buttons:
+                            return True
+                        return browser.execute_script(
+                            "const b=arguments[0],r=b.getBoundingClientRect();"
+                            "const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);"
+                            "return !!hit && (hit===b || b.contains(hit));",
+                            buttons[0],
+                        )
+
+                    WebDriverWait(driver, 10).until(login_button_clear)
+                return result
             except Exception:
                 prompts = []
                 for element in driver.find_elements("css selector", ".geetest_text_tips, .geetest_ques_tips"):
