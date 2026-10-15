@@ -48,7 +48,7 @@ jobs:
         working-directory: .upstream/WebMoniter
         run: |
           python -m pip install --disable-pip-version-check uv
-          uv sync --locked --extra rainyun --no-dev
+          uv sync --frozen --extra rainyun --no-dev
 
       - name: 检查 GitHub Runner 预装的浏览器与驱动
         run: |
