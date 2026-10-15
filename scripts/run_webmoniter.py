@@ -41,6 +41,12 @@ def business_success(ret: object, message: str) -> bool:
     return ret == 1 or (ret == 0 and any(text in message for text in ("已经签到", "今日已签到", "今天已签到", "已签到过", "already checked")))
 
 
+def normalize_challenge_prompt(text: str) -> str:
+    # GeeTest may serve English prompts even when Chrome requests zh-CN.
+    # Keep the current remaining count, which falls after each grid click.
+    return re.sub(r"\bselect\s*(\d+)\s*images?\s+with\b", r"选 \1 图片", text, flags=re.IGNORECASE)
+
+
 def redact(text: str, accounts: list[dict[str, str]]) -> str:
     for account in accounts:
         for value in (account["email"], account["password"], urllib.parse.quote(account["email"]), urllib.parse.quote(account["password"])):
@@ -67,6 +73,10 @@ def worker() -> dict:
     sys.path.insert(0, str(UPSTREAM))
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     from src.tasks import ikuuu_checkin as client
+    from src.tasks import ikuuu_captcha as captcha_client
+
+    original_prompt_text = captcha_client._prompt_text
+    captcha_client._prompt_text = lambda element: normalize_challenge_prompt(original_prompt_text(element))
 
     solver_state = {"rounds": 0, "kind": "未出现图片挑战"}
     original_solver = client.CaptchaSolver
