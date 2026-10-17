@@ -75,3 +75,12 @@ jobs:
         env:
           ACCOUNTS: ${{ secrets.ACCOUNTS }}
         run: .upstream/WebMoniter/.venv/bin/python scripts/run_webmoniter.py
+
+      - name: 保存验证码区域的公开诊断图
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: captcha-diagnostics-${{ github.run_id }}
+          path: diagnostics/*.png
+          retention-days: 1
+          if-no-files-found: ignore

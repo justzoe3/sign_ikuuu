@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
+from pathlib import Path
 import re
 import shutil
 import traceback
@@ -151,6 +153,31 @@ def clickable(driver, selector):
     return False
 
 
+def captcha_diagnostic(driver, label: str):
+    """Capture only public CAPTCHA widgets; never page/form screenshots."""
+    try:
+        data = driver.execute_script("""
+            const visible=e=>!!e.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
+            const c=window.Captcha;
+            const r=c?.getResponse?.() || {};
+            return {site_ready:!!c?.isReady?.(), result_keys:Object.keys(r),
+              widgets:[...document.querySelectorAll('[class*="geetest_"]')]
+                .filter(e=>visible(e) && /(?:btn|submit|refresh|success|fail|error|tips|mark|selected|box)/.test(e.className))
+                .slice(0,60).map(e=>({tag:e.tagName,classes:e.className,
+                    text:(e.textContent||'').trim().slice(0,100),
+                    rect:[e.getBoundingClientRect().width,e.getBoundingClientRect().height]}))};
+        """)
+        logging.info("验证码区域诊断 %s：%s", label, json.dumps(data, ensure_ascii=False))
+        folder = Path(__file__).resolve().parents[1] / "diagnostics"
+        folder.mkdir(exist_ok=True)
+        for panel in driver.find_elements("css selector", ".geetest_box"):
+            if panel.is_displayed() and panel.size["width"] > 100 and panel.size["height"] > 100:
+                panel.screenshot(str(folder / (label + ".png")))
+                break
+    except Exception:
+        pass
+
+
 def solve_captcha(driver, state: dict) -> None:
     from selenium.common.exceptions import TimeoutException
     from src.tasks import ikuuu_captcha as cap
@@ -184,6 +211,7 @@ def solve_captcha(driver, state: dict) -> None:
             return
         state.update(rounds=round_number, kind=challenge.kind.value)
         logging.info("本地验证码：第 %d/5 轮，%s。", round_number, challenge.kind.value)
+        captcha_diagnostic(driver, f"round-{round_number}-before")
         state["action"] = "predict"
         try:
             selected = cap._predict_challenge(challenge)
@@ -197,7 +225,8 @@ def solve_captcha(driver, state: dict) -> None:
                 if cap._snapshot(driver) != challenge:
                     break  # Discard stale coordinates after an automatic refresh.
                 cap._click_choice(driver, challenge, choice)
-            else:
+            captcha_diagnostic(driver, f"round-{round_number}-after-clicks")
+            if snapshot() == challenge:
                 def submit_ready(_driver):
                     next_state = changed(challenge)
                     if next_state:
@@ -234,7 +263,8 @@ def solve_captcha(driver, state: dict) -> None:
                 state["verified"] = True
                 return
             continue
-        refresh = wait_for(driver, lambda d: clickable(d, "button.geetest_refresh"), 5)
+        captcha_diagnostic(driver, f"round-{round_number}-stalled")
+        refresh = wait_for(driver, lambda d: clickable(d, ".geetest_refresh"), 5)
         state["action"] = "refresh_captcha"
         refresh.click()
         wait_for(driver, lambda d: changed(challenge), 20)
@@ -334,6 +364,8 @@ def run_browser(account: dict, state: dict, *, probe_only: bool = False) -> dict
             f"{os.path.basename(f.filename)}:{f.lineno}:{f.name}" for f in frames[-8:]))
         logging.warning("验证码动作=%s，轮次=%s，网站确认=%s。",
                         state.get("action", "not_started"), state.get("rounds", 0), state.get("verified", False))
+        if driver is not None and stage == "captcha":
+            captcha_diagnostic(driver, "captcha-failure")
         return {"success": False, "stage": stage, "kind": type(exc).__name__,
                 "message": f"{stage} 阶段未完成（{type(exc).__name__}）。", "captcha": state}
     finally:
