@@ -8,7 +8,7 @@
 
 [真实失败记录](https://github.com/justzoe3/sign_ikuuu/actions/runs/39057224034) · [极验官方错误码](https://docs.geetest.com/gt4/apirefer/errorcode/web)
 
-迁移后的项目自检会验证凭据格式、登录状态、真实 Chrome 在本地测试站点上的登录/签到、额外验证与拒绝处理，以及三个公开模型的完整性和 CPU 加载。**自检不访问真实 iKuuu，不代表已经签到。**
+[迁移后的独立项目自检已通过](https://github.com/justzoe3/sign_ikuuu/actions/runs/39060995939)：31 项检查、真实 Chrome 在本地测试站点上的登录/签到、额外验证与拒绝处理，以及三个公开模型的完整性和 CPU 加载。**自检不访问真实 iKuuu，不代表已经签到。**
 
 ## 配置与执行
 
