@@ -16,11 +16,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 仅在仓库超过 20 天没有提交时保活
         env:
-          HAS_SESSION: ${{ secrets.IKUUU_COOKIE != '' }}
+          HAS_CONFIG: ${{ secrets.ACCOUNTS != '' || secrets.IKUUU_COOKIE != '' }}
         shell: bash
         run: |
-          if [[ "$HAS_SESSION" != "true" ]]; then
-            echo '尚未配置签到会话，本次无需保活。'
+          if [[ "$HAS_CONFIG" != "true" ]]; then
+            echo '尚未配置签到凭证，本次无需保活。'
             exit 0
           fi
           latest_commit=$(git log -1 --format=%ct)

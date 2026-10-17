@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import ikuuu_browser as b
-from run_webmoniter import accounts_from_secret, redact
+from run_actions import accounts_from_secret, redact
 
 
 class CheckinResultTests(unittest.TestCase):

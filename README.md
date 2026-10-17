@@ -1,35 +1,34 @@
-# iKuuu GitHub 每日签到
+# iKuuu GitHub Actions 独立项目
 
-当前实现：本机正常登录 → 浏览器扩展加密同步会话 → GitHub Actions 每日签到。
+账号密码登录、免费 CPU 模型识别、浏览器操作和签到均由 GitHub Actions 执行。项目代码放在当前仓库，不依赖浏览器扩展、本地常驻程序、外部签到服务器或运行时检出其他项目。
 
-**尚未确认本账号的真实签到成功。** 自动登录已在 Actions 实测：验证码服务返回 `60500 / forbidden`，页面显示“极验封禁”。这不是依赖安装错误或单纯图片识别失败；不会循环重试或更换网络绕过该限制。
+## 当前结果
 
-- [真实失败记录与验证码诊断](https://github.com/justzoe3/sign_ikuuu/actions/runs/39057224034)
-- [极验官方错误码说明](https://docs.geetest.com/gt4/apirefer/errorcode/web)：60500 为服务端 forbidden。
+**仅账号密码的完整自动签到尚未跑通。** 最近的真实登录测试被验证码服务以 `60500 / forbidden` 拒绝，页面显示“极验封禁”。程序遇到此类拒绝会立即停止，不循环重试账号、伪造成功或更换网络绕过限制。
 
-## 使用会话同步版
+[真实失败记录](https://github.com/justzoe3/sign_ikuuu/actions/runs/39057224034) · [极验官方错误码](https://docs.geetest.com/gt4/apirefer/errorcode/web)
 
-1. 按 [浏览器扩展说明](browser-extension/README.md) 安装扩展，填写仓库和 GitHub 令牌。
-2. 在本机 iKuuu 页面正常登录。扩展使用 GitHub 公钥加密会话，更新 `IKUUU_COOKIE` Secret，然后启用并触发 Cookie 签到 workflow。
-3. 以 Actions 摘要中的服务端签到响应为准。同步成功只代表会话已提交和 workflow 已触发。
+迁移后的项目自检会验证凭据格式、登录状态、真实 Chrome 在本地测试站点上的登录/签到、额外验证与拒绝处理，以及三个公开模型的完整性和 CPU 加载。**自检不访问真实 iKuuu，不代表已经签到。**
 
-每日执行时间为香港时间 07:10，GitHub 调度可能延迟。有效会话同步后，浏览器关闭不影响 Actions 使用现有会话。会话过期时需要在本机再次正常登录；扩展会再次同步。未获得有效会话前，Cookie 定时 workflow 保持停用，避免空跑。
+## 配置与执行
 
-仓库保活 workflow 每月 1 日检查一次：仅在已配置会话、且超过 20 天没有提交时记录一次心跳，避免公开仓库的计划任务因长期无活动停用。
+在 Repository Secrets 中配置 `ACCOUNTS`，每行一个 `邮箱:密码`。现有账号 Secret 可直接沿用。运行入口为 `python scripts/run_actions.py`，也兼容 `python sign_ikuuu.py`。
 
-签到客户端只使用 Python 标准库，不需要浏览器、模型下载或付费验证码服务。凭据保存在 GitHub Secret，日志脱敏；不会把会话写入仓库。遇到失效、限流、重定向或非 JSON 响应，都会正确失败并说明原因。
+Actions 中有两个主要入口：
 
-## 验证情况
+- **iKuuu Actions 独立项目自检**：验证当前仓库的完整运行环境，不登录真实网站。
+- **iKuuu Actions 独立签到**：由 Actions 内的 Chrome 打开正常登录表单，本地模型识别支持的文字点选/九宫格，确认登录后在同一会话内请求签到。只有网站返回成功或今日已经签到才标绿。
 
-本地 31 项 Python 回归检查通过，覆盖服务端成功/已经签到、伪成功、过期重定向、限流、登录阶段与脱敏。浏览器扩展的同步、会话去重和失败处理已通过模拟检查；其 sealed-box 加密输出已用独立 PyNaCl/LibSodium 解密验证。
+签到 workflow 中已定义香港时间每天 07:10 的计划，GitHub 调度可能延迟。当前因为真实登录仍被服务端拒绝，该 workflow 保持停用；不会把失败的账号登录持续放进每日计划。
 
-这些检查不代表真实网站签到成功。首次完整验证仍需要一份由用户正常登录获得的有效会话。
+仓库保活每月检查一次，仅在已配置凭据且超过 20 天没有提交时写入心跳，避免公开仓库的计划任务因长期无活动停用。
 
-[GitHub 上通过的完整集成检查](https://github.com/justzoe3/sign_ikuuu/actions/runs/39058249122) 也实际加载了 Chrome 扩展，验证了后台响应、弹窗按钮和权限范围；测试没有登录网站或使用真实 Cookie。
+## 运行边界
 
-- `scripts/run_ikuuu_cookie.py`：在 Actions 中执行真实签到。
-- `browser-extension/`：读取本机 iKuuu 会话并加密同步。
-- `scripts/ikuuu_browser.py`：保留自动登录实验代码；遇到明确 forbidden 立即退出。
-- `verify-integration.yml`：只运行集成自检，不登录 iKuuu。
+每个账号最多处理 5 轮图片验证、最多执行 300 秒。验证码服务明确 forbidden 或接口限流时，停止当前运行及剩余账号。网站要求邮箱验证码或身份验证器动态码时，会报告相应阶段；当前没有配置额外验证信息的自动读取。
 
-自动登录实验中仅保存了验证码面板的公开截图，保留 1 天；没有上传整页表单、账号密码、Cookie 或浏览器配置。
+如果另行在 GitHub Secret 中配置了 `IKUUU_COOKIE`，程序也支持直接在 Actions 内签到；它是可选输入，不需要扩展。Cookie 失效会返回失败，不能把它当作账号密码自动登录问题已经解决。
+
+模型权重从原始公开仓库的固定提交下载，核对 SHA-256 后缓存；浏览器会话不写入公开缓存。第三方代码来源和许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+原本地扩展方案已从当前项目移除，对应扩展发布包已撤回。

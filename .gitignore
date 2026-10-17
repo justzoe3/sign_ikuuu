@@ -5,3 +5,7 @@ config.json
 cookie*.txt
 *cookies*.json
 .checkin_log
+
+.models/
+diagnostics/
+integration/

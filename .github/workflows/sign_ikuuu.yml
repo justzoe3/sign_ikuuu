@@ -1,47 +1,50 @@
-name: iKuuu Cookie 自动签到
-
+name: iKuuu Actions 独立签到
 on:
   schedule:
-    - cron: '10 23 * * *' # 香港时间每天 07:10；GitHub 调度可能延迟
+    - cron: '10 23 * * *' # 香港时间 07:10
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: ikuuu-checkin
   cancel-in-progress: false
-
 jobs:
   checkin:
-    name: 验证登录会话并签到
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       TZ: Asia/Hong_Kong
+      IKUUU_MODEL_DIR: .models
       PYTHONUNBUFFERED: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
     steps:
-      - name: 检出运行配置
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-
-      - name: 检查 Cookie 配置
-        env:
-          IKUUU_COOKIE: ${{ secrets.IKUUU_COOKIE }}
-          IKUUU_BASE_URL: ${{ vars.IKUUU_BASE_URL || 'https://ikuuu.top' }}
-        run: python scripts/run_ikuuu_cookie.py --check-config
-
-      - name: 设置 Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11'
-
-      - name: 检查服务端结果判定
-        run: python -m unittest discover -s tests -v
-
-      - name: 执行签到并验证服务端结果
+      - name: 检查仓库凭证配置
+        id: config
         env:
+          ACCOUNTS: ${{ secrets.ACCOUNTS }}
           IKUUU_COOKIE: ${{ secrets.IKUUU_COOKIE }}
-          IKUUU_BASE_URL: ${{ vars.IKUUU_BASE_URL || 'https://ikuuu.top' }}
-        run: python scripts/run_ikuuu_cookie.py
+        run: python scripts/run_actions.py --check-config
+      - name: 安装免费浏览器和本地识别依赖
+        if: steps.config.outputs.mode == 'account'
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: 缓存公开识别模型
+        if: steps.config.outputs.mode == 'account'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .models
+          key: ikuuu-models-v1-${{ hashFiles('scripts/ikuuu_models.py') }}
+      - name: 下载并核对模型 SHA-256
+        if: steps.config.outputs.mode == 'account'
+        run: python scripts/ikuuu_models.py --directory .models
+      - name: 独立登录、签到并核对网站响应
+        env:
+          ACCOUNTS: ${{ secrets.ACCOUNTS }}
+          IKUUU_COOKIE: ${{ secrets.IKUUU_COOKIE }}
+        run: python scripts/run_actions.py

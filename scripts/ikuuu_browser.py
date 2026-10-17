@@ -63,11 +63,12 @@ fetch('/user/checkin', {method: 'POST', credentials: 'same-origin',
   redirect: 'error', signal: abort.signal,
   headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}})
   .then(async r => {
-    const type = r.headers.get('content-type') || '';
-    if (!type.includes('application/json')) return {status: r.status, error: 'not_json'};
     const body = await r.text();
     if (body.length > 65536) return {status: r.status, error: 'oversized_response'};
-    const d = JSON.parse(body);
+    let d;
+    try { d = JSON.parse(body); }
+    catch (_) { return {status:r.status,error:'not_json'}; }
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return {status:r.status,error:'not_json'};
     return {status: r.status, ret: d.ret,
       message: typeof d.msg === 'string' ? d.msg.slice(0, 500) : ''};
   })
@@ -180,8 +181,8 @@ def captcha_diagnostic(driver, label: str):
 
 def solve_captcha(driver, state: dict) -> None:
     from selenium.common.exceptions import TimeoutException
-    from src.tasks import ikuuu_captcha as cap
-    from src.tasks.ikuuu_recognition import RecognitionFailedError
+    import ikuuu_captcha as cap
+    from ikuuu_recognition import RecognitionFailedError
 
     original_prompt = cap._prompt_text
     cap._prompt_text = lambda e: normalize_prompt(original_prompt(e))
