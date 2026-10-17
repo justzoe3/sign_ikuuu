@@ -50,6 +50,9 @@ jobs:
           python -m pip install --disable-pip-version-check uv
           uv sync --frozen --extra rainyun --no-dev
 
+      - name: 检查登录与签到状态判定
+        run: .upstream/WebMoniter/.venv/bin/python -m unittest discover -s tests -v
+
       - name: 检查 GitHub Runner 预装的浏览器与驱动
         run: |
           python - <<'PY'

@@ -11,9 +11,9 @@ import re
 import signal
 import subprocess
 import sys
-import urllib.error
 import urllib.parse
-import urllib.request
+
+from ikuuu_browser import business_success
 
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = ROOT / ".upstream" / "WebMoniter"
@@ -37,27 +37,6 @@ def accounts_from_secret(raw: str) -> list[dict[str, str]]:
     return accounts
 
 
-def business_success(ret: object, message: str) -> bool:
-    return ret == 1 or (ret == 0 and any(text in message for text in ("已经签到", "今日已签到", "今天已签到", "已签到过", "already checked")))
-
-
-def normalize_challenge_prompt(text: str) -> str:
-    # GeeTest may serve English prompts even when Chrome requests zh-CN.
-    # Keep the current remaining count, which falls after each grid click.
-    text = re.sub(r"select\s*(\d+)\s*images?", r"选 \1 图片", text, flags=re.IGNORECASE)
-    return re.sub(r"select\s*in\s*this\s*order", "依次点击", text, flags=re.IGNORECASE)
-
-
-def authenticated_page(state: dict) -> bool:
-    path = state.get("path", "")
-    return (
-        state.get("origin") == BASE_URL
-        and (path == "/user" or path.startswith("/user/"))
-        and state.get("logout_links", 0) > 0
-        and state.get("password_fields", 0) == 0
-    )
-
-
 def redact(text: str, accounts: list[dict[str, str]]) -> str:
     for account in accounts:
         for value in (account["email"], account["password"], urllib.parse.quote(account["email"]), urllib.parse.quote(account["password"])):
@@ -74,153 +53,12 @@ def summary(text: str) -> None:
             output.write(text.rstrip() + "\n")
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 def worker() -> dict:
     account = json.load(sys.stdin)
     sys.path.insert(0, str(UPSTREAM))
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    from src.tasks import ikuuu_checkin as client
-    from src.tasks import ikuuu_captcha as captcha_client
-
-    original_prompt_text = captcha_client._prompt_text
-    captcha_client._prompt_text = lambda element: normalize_challenge_prompt(original_prompt_text(element))
-
-    original_login_completed = client._login_completed
-    previous_login_state = None
-
-    def observed_login_completed(driver, cfg, solver):
-        nonlocal previous_login_state
-        from selenium.common.exceptions import StaleElementReferenceException
-
-        try:
-            # A single DOM read avoids retaining element handles over a redirect.
-            state = driver.execute_script("""
-                const visible = e => !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
-                const links = [...document.querySelectorAll('a[href="/auth/logout"], a[href$="/auth/logout"]')];
-                const fields = [...document.querySelectorAll('input')].filter(visible);
-                const alerts = [...document.querySelectorAll('.swal2-html-container, .swal-text, .alert-danger, .invalid-feedback, .swal2-title')]
-                    .filter(visible).map(e => e.textContent.trim().slice(0,300)).filter(Boolean).slice(0,4);
-                return {origin: location.origin, path: location.pathname, title: document.title,
-                    logout_links: links.length, visible_logout_links: links.filter(visible).length,
-                    password_fields: fields.filter(e => e.type === 'password').length, alerts,
-                    fields: fields.slice(0,8).map(e => ({name:e.name,type:e.type,placeholder:e.placeholder}))};
-            """)
-            detail = json.dumps(state, ensure_ascii=False)
-            if detail != previous_login_state:
-                logging.info("登录状态诊断（仅页面提示与字段名，不含输入值）：%s", detail)
-                previous_login_state = detail
-            # The logout link may live in a closed account menu. The protected
-            # user page and authenticated Cookie are still required, followed
-            # by independent verification of the server's check-in response.
-            if authenticated_page(state):
-                return True
-        except Exception:
-            # Diagnostics are best effort and cannot interrupt authentication.
-            pass
-        try:
-            return original_login_completed(driver, cfg, solver)
-        except StaleElementReferenceException:
-            return False
-
-    client._login_completed = observed_login_completed
-
-    solver_state = {"rounds": 0, "kind": "未出现图片挑战"}
-    original_solver = client.CaptchaSolver
-
-    class ObservedSolver(original_solver):
-        def solve_if_present(self, driver, **options):
-            from src.tasks.ikuuu_captcha import CaptchaKind, visible_challenge, _verified
-            from selenium.common.exceptions import TimeoutException
-            from selenium.webdriver.support.ui import WebDriverWait
-
-            # GeeTest removes its success element when the verified popup
-            # closes. Retain that observed success across subsequent polls;
-            # a newly visible challenge must still be solved normally.
-            if solver_state.get("verified") and visible_challenge(driver) is None:
-                return True
-
-            # A visible blank panel appears before its prompt arrives. Do not
-            # classify that loading frame as an unsupported CAPTCHA type.
-            if options.get("wait_for_challenge"):
-                try:
-                    WebDriverWait(driver, 12).until(
-                        lambda d: _verified(d)
-                        or visible_challenge(d) in (CaptchaKind.WORD, CaptchaKind.NINE)
-                    )
-                except TimeoutException:
-                    pass
-            kind = visible_challenge(driver)
-            if kind is not None:
-                solver_state["kind"] = kind.value
-                panels = [
-                    normalize_challenge_prompt(original_prompt_text(element))[:240]
-                    for element in driver.find_elements("css selector", ".geetest_box, .geetest_panel")
-                    if element.is_displayed()
-                ]
-                logging.info("验证码识别入口：类型=%s；公开容器提示=%s", kind.value, panels[:2])
-            try:
-                result = super().solve_if_present(driver, **options)
-                if result and _verified(driver):
-                    solver_state["verified"] = True
-                    logging.info("验证码已通过，等待登录按钮不再被验证弹层遮挡。")
-
-                    def login_button_clear(browser):
-                        buttons = browser.find_elements("css selector", "button.login[type='submit']")
-                        if not buttons:
-                            return True
-                        return browser.execute_script(
-                            "const b=arguments[0],r=b.getBoundingClientRect();"
-                            "const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);"
-                            "return !!hit && (hit===b || b.contains(hit));",
-                            buttons[0],
-                        )
-
-                    WebDriverWait(driver, 10).until(login_button_clear)
-                return result
-            except Exception:
-                prompts = []
-                for element in driver.find_elements("css selector", ".geetest_text_tips, .geetest_ques_tips"):
-                    if element.is_displayed():
-                        text = (element.get_attribute("textContent") or "").strip()
-                        if text:
-                            prompts.append(text[:160])
-                solver_state["prompt"] = prompts[:4]
-                logging.warning("验证码类型=%s；公开挑战提示=%s；已处理轮次=%s", solver_state["kind"], prompts[:4], self.rounds)
-                raise
-            finally:
-                solver_state["rounds"] = self.rounds
-
-    client.CaptchaSolver = ObservedSolver
-    cfg = client.CheckinConfig(
-        enable=True, domain="ikuuu.top", email=account["email"], password=account["password"],
-        time="07:10", accounts=[account], push_channels=[],
-    )
-    try:
-        cookie = client._login_and_get_cookie_sync(cfg)
-    except Exception as error:
-        return {"success": False, "stage": "login", "kind": type(error).__name__, "message": str(error), "captcha": solver_state}
-    if not cookie:
-        return {"success": False, "stage": "login", "message": "未获得已认证的登录会话。", "captcha": solver_state}
-    fields = dict(part.strip().split("=", 1) for part in cookie.split(";") if "=" in part)
-    if not fields.get("uid") or not fields.get("key"):
-        return {"success": False, "stage": "login", "message": "登录会话缺少 uid/key，停止签到。", "captcha": solver_state}
-
-    request = urllib.request.Request(
-        BASE_URL + "/user/checkin", data=b"", method="POST",
-        headers={"Cookie": cookie, "Origin": BASE_URL, "Referer": BASE_URL + "/user", "X-Requested-With": "XMLHttpRequest", "User-Agent": client._IKUUU_USER_AGENT},
-    )
-    try:
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as response:
-            data = json.loads(response.read(256 * 1024))
-        message = str(data.get("msg", "未收到服务端签到结果"))
-        ret = data.get("ret")
-        return {"success": business_success(ret, message), "stage": "checkin", "ret": ret, "message": message, "captcha": solver_state}
-    except Exception as error:
-        return {"success": False, "stage": "checkin", "kind": type(error).__name__, "message": str(error), "captcha": solver_state}
+    from ikuuu_browser import run_browser
+    return run_browser(account, {"rounds": 0, "kind": "未出现图片挑战", "verified": False})
 
 
 def run_account(account: dict[str, str]) -> tuple[dict, str]:
@@ -232,7 +70,7 @@ def run_account(account: dict[str, str]) -> tuple[dict, str]:
         text=True, encoding="utf-8", errors="replace", start_new_session=True,
     )
     try:
-        output, diagnostic = process.communicate(json.dumps(account), timeout=240)
+        output, diagnostic = process.communicate(json.dumps(account), timeout=300)
         try:
             result = json.loads(output)
             if not isinstance(result, dict):
@@ -245,7 +83,7 @@ def run_account(account: dict[str, str]) -> tuple[dict, str]:
     except subprocess.TimeoutExpired:
         os.killpg(process.pid, signal.SIGKILL)
         _, diagnostic = process.communicate()
-        return {"success": False, "stage": "timeout", "message": "自动登录与签到超过 240 秒，已停止本次测试。"}, diagnostic
+        return {"success": False, "stage": "timeout", "message": "自动登录与签到超过 300 秒，已停止本次测试。"}, diagnostic
     finally:
         # The child owns this process group, including its browser and driver.
         try:
@@ -264,7 +102,7 @@ def main() -> int:
             with contextlib.redirect_stdout(sys.stderr):
                 result = worker()
         except Exception as error:
-            result = {"success": False, "stage": "runtime", "kind": type(error).__name__, "message": str(error)}
+            result = {"success": False, "stage": "runtime", "kind": type(error).__name__, "message": "客户端异常，详见错误类型。"}
         print(json.dumps(result, ensure_ascii=False))
         return 0
     try:
