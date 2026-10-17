@@ -42,7 +42,7 @@ def normalize_cookie(raw: str) -> str:
         if not part.strip():
             continue
         name, sep, value = part.strip().partition('=')
-        if not sep or not re.fullmatch(r'[A-Za-z0-9_\-]+', name) or not value:
+        if not sep or not re.fullmatch(r'[A-Za-z0-9_\-]+', name):
             raise ValueError('Cookie 字段格式不正确。')
         fields[name] = value
     if not fields.get('uid') or not fields.get('key'):

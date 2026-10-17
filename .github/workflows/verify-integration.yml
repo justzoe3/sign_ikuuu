@@ -17,6 +17,15 @@ jobs:
       - name: 检查登录与签到结果判定
         run: python -m unittest discover -s tests -v
       - name: 安装加密交叉验证依赖
-        run: python -m pip install --disable-pip-version-check 'PyNaCl==1.6.2'
+        run: python -m pip install --disable-pip-version-check 'PyNaCl==1.6.2' 'selenium==4.51.0'
       - name: 验证扩展同步和 GitHub 加密兼容性
         run: python scripts/check_extension.py
+      - name: 在真实 Chrome 中检查扩展
+        run: python scripts/check_extension_browser.py
+      - name: 保存扩展界面验证图
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: extension-ui-check
+          path: integration/extension-popup.png
+          retention-days: 1
+          if-no-files-found: ignore

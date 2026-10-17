@@ -12,6 +12,10 @@ class CookieTests(unittest.TestCase):
     def test_cookie_header(self):
         self.assertEqual(normalize_cookie('Cookie: uid=fixture; key=session'), 'uid=fixture; key=session')
 
+    def test_empty_optional_cookie_value_is_valid(self):
+        self.assertEqual(normalize_cookie('uid=fixture; key=session; preference='),
+                         'uid=fixture; key=session; preference=')
+
     def test_cookie_editor_json_is_domain_scoped(self):
         raw=json.dumps([{'domain':'.ikuuu.top','name':'uid','value':'fixture'},
             {'domain':'ikuuu.top','name':'key','value':'session'},
