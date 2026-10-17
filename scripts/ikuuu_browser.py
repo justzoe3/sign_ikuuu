@@ -195,13 +195,24 @@ def solve_captcha(driver, state: dict) -> None:
             return None
         return cap._snapshot(driver)
 
+    def blocked():
+        denied = driver.execute_script("""
+            return [...document.querySelectorAll('.geetest_captcha,.geetest_err_tips')]
+              .some(e=>e.getClientRects().length &&
+                (/geetest_lock_error/.test(e.className) || /极验封禁|60500/.test(e.textContent)));
+        """)
+        if denied:
+            raise FlowError('captcha_blocked', '验证码服务明确拒绝当前自动化请求（60500/forbidden）；停止自动登录。')
+
     def changed(previous):
+        blocked()
         if captcha_ready(driver):
             return "verified"
         current = snapshot()
         return current if current is not None and current != previous else False
 
     def ready_or_snapshot(_driver):
+        blocked()
         return "verified" if captcha_ready(driver) else snapshot()
 
     for round_number in range(1, 6):

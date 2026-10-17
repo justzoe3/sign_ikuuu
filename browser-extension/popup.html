@@ -1,0 +1,13 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>iKuuu GitHub 签到</title>
+<style>body{width:340px;padding:16px;font:14px/1.6 system-ui;color:#183047;margin:0}h1{font-size:19px;margin:0 0 10px}label{display:block;margin-top:10px}input{box-sizing:border-box;width:100%;padding:9px;border:1px solid #b8c6d1;border-radius:6px}button,a.button{padding:9px 12px;margin-top:12px;display:inline-block;border:0;border-radius:6px;background:#156f60;color:white;cursor:pointer;text-decoration:none}button.secondary{background:#e9eff3;color:#183047}p{margin:10px 0}small{display:block;color:#536778}#status{background:#eff5f4;padding:10px;border-radius:7px;white-space:pre-wrap}a{color:#156f60}</style></head>
+<body><h1>iKuuu → GitHub 每日签到</h1>
+<div id="status">读取状态…</div>
+<p>正常登录一次，同步后由 GitHub 每天签到。会话过期时会打开 iKuuu，请你完成登录。</p>
+<label>GitHub 仓库<input id="repo" autocomplete="off" placeholder="justzoe3/sign_ikuuu"></label>
+<label>GitHub 令牌<input id="token" type="password" autocomplete="off" placeholder="github_pat_… 或 ghp_…"></label>
+<small>可使用已有令牌，需要目标仓库的 Secrets 和 Actions 写入权限。令牌保存在本机扩展中。</small>
+<a id="create-token" target="_blank" rel="noreferrer">创建专用令牌</a><br>
+<button id="save">保存并同步</button> <button id="sync" class="secondary">立即同步</button>
+<button id="login" class="secondary">打开 iKuuu 登录</button>
+<small>Cookie 在本机加密后发送到你的 GitHub Secret。签到是否成功，以 Actions 内的网站响应为准。</small>
+<script src="popup.js"></script></body></html>

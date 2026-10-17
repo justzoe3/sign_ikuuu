@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "iKuuu → GitHub 每日签到",
+  "version": "1.0.0",
+  "description": "将本机已登录的 iKuuu 会话加密同步到你指定的 GitHub 仓库，由 Actions 每日签到。",
+  "permissions": ["cookies", "storage", "alarms"],
+  "host_permissions": ["https://ikuuu.top/*", "https://api.github.com/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_popup": "popup.html", "default_title": "iKuuu GitHub 签到"}
+}
